@@ -1,10 +1,10 @@
 -----
 
-# 🚀 Instrucciones de Configuración y Ejecución del Experimento Espacial
+# Extended Map Algebra
 
 ## 🛠️ Dependencias del Sistema
 
-Para compilar y ejecutar los programas, necesitas instalar las siguientes librerías de desarrollo:
+Para compilar y ejecutar los programas, es necesario instalar las siguientes librerías de desarrollo:
 
   * `libgdal-dev`
   * `libnetcdf-c++4-dev`
