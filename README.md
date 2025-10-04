@@ -107,7 +107,7 @@ g++ naive.cpp -o naive -lnetcdf_c++4 -lgdal -I/usr/include/gdal
 
 ## ⚠️ Consideraciones Importantes
 
-  * **Valores Máximos No Encontrados:** Si para algún polígono $P$, el programa `naive.cpp` no encuentra ninguna celda $C$ tal que $C$.`Within(P)` sea verdadero, el valor máximo que se mostrará en pantalla será el valor mínimo por defecto del tipo `double` en C++ ($ -1.79769e+308$). Esto debe interpretarse como **-INF** (Infinito Negativo), indicando que el polígono no intersectó ninguna celda.
+  * **Valores Máximos No Encontrados:** Si para algún polígono $P$, el programa `naive.cpp` no encuentra ninguna celda $C$ tal que $C$.`Within(P)` sea verdadero, el programa omitirá el polígono $P$ del reporte de resultados y lo agregará a la lista de polígonos excluídos.
 
 -----
 
@@ -125,3 +125,22 @@ Este es el orden recomendado para generar los datos y ejecutar el análisis:
 # 3. Ejecutar el algoritmo ingenuo
 ./naive raster.nc polygons/polygons.shp
 ```
+
+La salida esperada del programa es la siguiente:
+
+```bash
+RESULTS
+| Polygon ID          | Maximum              |
+| id1                 | max1                 |
+| id2                 | max2                 |
+| id3                 | max3                 |
+|  .                  |  .                   |
+|  .                  |  .                   |
+|  .                  |  .                   |
+| idn                 | maxn                 |
+Total execution time (including data loading): <time> ms 
+Number of polygons excluded: <number>
+Polygons excluded: <id0> <id1> <id2> ... <idk>
+```
+
+Nótese que el tiempo de ejecución está medido en ms

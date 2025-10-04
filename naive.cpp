@@ -125,7 +125,8 @@ int main(int argc, char* argv[]) {
         // ================================     NAIVE ALGORITHM    ================================
         
         map<long, double> results; // results table: <PolygonID, Maximum>
-        int polygonsExcluded = 0;  // count how many polygons are excluded from the results table 
+        vector<long> excludedPolygonsIDs;
+        int numberOfExcludedPolygons = 0;  // count how many polygons are excluded from the results table 
 
         // Get the first layer
         OGRLayer *layer = poDS->GetLayer(0);
@@ -178,7 +179,9 @@ int main(int argc, char* argv[]) {
                 if (currentMax > numeric_limits<double>::lowest()) {
                     results[feature->GetFID()] = currentMax;
                 } else {
-                    polygonsExcluded++;
+                    // Exclude the current Polygon
+                    numberOfExcludedPolygons++;
+                    excludedPolygonsIDs.push_back(feature->GetFID());
                 }
             }
             // Destroy feature
@@ -196,7 +199,14 @@ int main(int argc, char* argv[]) {
         
         prinResultsTable(results);
         cout << "Total execution time (including data loading): " << execution_time.count() << " ms "<< endl;
-        cout << "Polygons excluded: " << polygonsExcluded << endl;
+        cout << "Number of polygons excluded: " << numberOfExcludedPolygons << endl;
+        cout << "Polygons excluded: ";
+
+        for (const long& polygonID : excludedPolygonsIDs) {
+            cout << polygonID << " ";
+        }
+
+        cout << endl;
         
         return 0;
 
