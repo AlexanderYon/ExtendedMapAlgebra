@@ -3,4 +3,6 @@
 !**/.gitignore
 !**/Makefile
 !**/README.md
+!**/docs/**
+!**/examples/**
 !*/
