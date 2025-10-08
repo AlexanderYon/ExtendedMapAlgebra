@@ -9,6 +9,7 @@ Para compilar y ejecutar los programas, es necesario instalar las siguientes lib
   * `libgdal-dev`
   * `libnetcdf-c++4-dev`
   * `libnetcdf-dev`
+  * `libboost-dev`
 
 -----
 

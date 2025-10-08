@@ -5,7 +5,12 @@
 #include <chrono>
 #include <cstdio>
 #include <iomanip>
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
 
+namespace bg = boost::geometry;
+using BoostPoint = bg::model::d2::point_xy<double>;
+using BoostPolygon = bg::model::polygon<BoostPoint>;
 using namespace std;
 using namespace netCDF;
 using namespace netCDF::exceptions;
@@ -67,6 +72,36 @@ OGRPolygon fromCellToPolygon(int i, int j) {
     cellPoly.addRing(&ring);
     return cellPoly;
 }
+
+
+/**
+ * Convert a OGRPolygon to a BoostPolygon
+ * 
+ */
+BoostPolygon convertOGRPolygonToBoost(OGRPolygon* ogrPoly) {
+    BoostPolygon boostPoly;
+
+    // Anillo exterior
+    OGRLinearRing* exteriorRing = ogrPoly->getExteriorRing();
+    for (int i = 0; i < exteriorRing->getNumPoints(); ++i) {
+        boostPoly.outer().emplace_back(exteriorRing->getX(i), exteriorRing->getY(i));
+    }
+
+    // Anillos interiores (agujeros)
+    for (int i = 0; i < ogrPoly->getNumInteriorRings(); ++i) {
+        OGRLinearRing* innerRing = ogrPoly->getInteriorRing(i);
+        bg::model::ring<BoostPoint> boostInnerRing;
+        for (int j = 0; j < innerRing->getNumPoints(); ++j) {
+            boostInnerRing.emplace_back(innerRing->getX(j), innerRing->getY(j));
+        }
+        boostPoly.inners().push_back(boostInnerRing);
+    }
+
+    // Corrige y asegura que el polígono sea válido (cerrado, sentido correcto)
+    bg::correct(boostPoly);
+    return boostPoly;
+}
+
 
 void prinResultsTable(const std::map<long, double>& results) {
     cout << "RESULTS" << endl;
@@ -135,15 +170,17 @@ int main(int argc, char* argv[]) {
         OGRFeature *feature;
         layer->ResetReading();
         while ((feature = layer->GetNextFeature()) != NULL) {
+            
             // Get the geometry of the current polygon
             OGRGeometry *geom = feature->GetGeometryRef();
 
             if (geom != NULL && wkbFlatten(geom->getGeometryType()) == wkbPolygon) {
 
-                OGRPolygon *poly = (OGRPolygon *) geom;
+                OGRPolygon *OGRPoly = (OGRPolygon *) geom;
+                BoostPolygon poly = convertOGRPolygonToBoost(OGRPoly); // convert to BoostPolygon to use covered_by
 
                 // Get the MBR of the current Polygon 
-                auto [ixmin, ixmax, iymin, iymax] = getMBR(poly);
+                auto [ixmin, ixmax, iymin, iymax] = getMBR(OGRPoly);
 
                 // Define the raster subsection
                 size_t start_row = iymin;
@@ -165,8 +202,9 @@ int main(int argc, char* argv[]) {
                     for (size_t j = 0; j < count[1]; j++) {
                         OGRPolygon cellPolygon = fromCellToPolygon(i + iymin, j + ixmin);
 
-                        // If the current cell of the raster is within the current polygon, update currentMax value if appropriate
-                        if (cellPolygon.Within(poly)) {
+                        BoostPolygon boostedCellPolygon = convertOGRPolygonToBoost(&cellPolygon);
+
+                        if (bg::covered_by(boostedCellPolygon, poly)) {
                             double currentValue = subset[i * count[1] + j];
                             if (currentValue > currentMax) {
                                 currentMax = currentValue;
