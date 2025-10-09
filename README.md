@@ -139,9 +139,20 @@ RESULTS
 |  .                  |  .                   |
 |  .                  |  .                   |
 | idn                 | maxn                 |
-Total execution time (including data loading): <time> ms 
 Number of polygons excluded: <number>
 Polygons excluded: <id0> <id1> <id2> ... <idk>
+
+RESULTS OF TIME MEASURING
+
+Total execution time: <time> s 
+Total NetCDF I/O operations: <number>
+Total NetCDF I/O time: <time> s 
+Total GDAL I/O operations: <number>
+Total GDAL I/O time: <time> s 
+Total extra operations time*: <time> s 
+------------------------------------------------------------------------
+*Extra operations refers to other types of operations that are not related to NAIVE algorithm as such, 
+for example: converting object types or collecting results.
 ```
 
-Nótese que el tiempo de ejecución está medido en ms
+Nótese que el tiempo de ejecución está medido en s
