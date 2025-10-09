@@ -151,6 +151,7 @@ Total GDAL I/O operations: <number>
 Total GDAL I/O time: <time> s 
 Total extra operations time*: <time> s 
 ------------------------------------------------------------------------
+
 *Extra operations refers to other types of operations that are not related to NAIVE algorithm as such, 
 for example: converting object types or collecting results.
 ```
