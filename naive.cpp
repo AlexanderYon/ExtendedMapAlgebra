@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
+#include <optional>
 
 namespace bg = boost::geometry;
 using BoostPoint = bg::model::d2::point_xy<double>;
@@ -75,19 +76,18 @@ OGRPolygon fromCellToPolygon(int i, int j) {
 
 
 /**
- * Convert a OGRPolygon to a BoostPolygon
- * 
+ * Convert an OGRPolygon to a BoostPolygon
  */
 BoostPolygon convertOGRPolygonToBoost(OGRPolygon* ogrPoly) {
     BoostPolygon boostPoly;
 
-    // Anillo exterior
+    // Outer Ring
     OGRLinearRing* exteriorRing = ogrPoly->getExteriorRing();
     for (int i = 0; i < exteriorRing->getNumPoints(); ++i) {
         boostPoly.outer().emplace_back(exteriorRing->getX(i), exteriorRing->getY(i));
     }
 
-    // Anillos interiores (agujeros)
+    // Inner rings
     for (int i = 0; i < ogrPoly->getNumInteriorRings(); ++i) {
         OGRLinearRing* innerRing = ogrPoly->getInteriorRing(i);
         bg::model::ring<BoostPoint> boostInnerRing;
@@ -97,13 +97,27 @@ BoostPolygon convertOGRPolygonToBoost(OGRPolygon* ogrPoly) {
         boostPoly.inners().push_back(boostInnerRing);
     }
 
-    // Corrige y asegura que el polígono sea válido (cerrado, sentido correcto)
+    // Correct and make sure the Polygon is valid (closed, correct direction)
     bg::correct(boostPoly);
     return boostPoly;
 }
 
-
-void prinResultsTable(const std::map<long, double>& results) {
+/**
+ * Print results table using this format:
+RESULTS
+| Polygon ID          | Maximum              |
+| id1                 | max1                 |
+| id2                 | max2                 |
+| id3                 | max3                 |
+|  .                  |  .                   |
+|  .                  |  .                   |
+|  .                  |  .                   |
+| idn                 | maxn                 |
+Total execution time (including data loading): <time> ms 
+Number of polygons excluded: <number>
+Polygons excluded: <id0> <id1> <id2> ... <idk>
+ */
+void printResultsTable(const std::map<long, double>& results) {
     cout << "RESULTS" << endl;
     cout << "| " << left << setw(20) << "Polygon ID" 
          << "| " << left << setw(20) << "Maximum" 
@@ -129,9 +143,8 @@ int main(int argc, char* argv[]) {
 		    return -1;
         }
 
-        // Start Time
+        // Define clock for time measuring
         using clock = high_resolution_clock;
-        auto start_time = clock::now();
 
         // ================================     GET RASTER     ================================
 
@@ -169,7 +182,29 @@ int main(int argc, char* argv[]) {
         // Iterate through each feature (each polygon)
         OGRFeature *feature;
         layer->ResetReading();
-        while ((feature = layer->GetNextFeature()) != NULL) {
+
+        // Start time
+        duration<double> total_netcdf_queries_time(0);      // measure NetCDF queries (for the Raster)
+        duration<double> total_gdal_queries_time(0);        // measure GDAL queries (for Polygons)
+        duration<double> total_extra_opreations_time(0);    // extra operations like conversions between objects
+        duration<double> total_execution_time(0);
+        int netcdfIOCount = 0;
+        int gdalIOCount = 0;
+        
+        auto start_total_time = clock::now();
+        while (true) {
+
+            auto start_gdal_query_time = clock::now();
+            feature = layer->GetNextFeature();
+            auto end_gdal_query_time = clock::now();
+            total_gdal_queries_time += (end_gdal_query_time - start_gdal_query_time);
+
+            if (feature == NULL) {
+                total_gdal_queries_time -= (end_gdal_query_time - start_gdal_query_time);
+                break;
+            }
+
+            gdalIOCount++;
             
             // Get the geometry of the current polygon
             OGRGeometry *geom = feature->GetGeometryRef();
@@ -177,7 +212,10 @@ int main(int argc, char* argv[]) {
             if (geom != NULL && wkbFlatten(geom->getGeometryType()) == wkbPolygon) {
 
                 OGRPolygon *OGRPoly = (OGRPolygon *) geom;
+
+                auto start_extra_operation = clock::now();
                 BoostPolygon poly = convertOGRPolygonToBoost(OGRPoly); // convert to BoostPolygon to use covered_by
+                total_extra_opreations_time += (clock::now() - start_extra_operation);
 
                 // Get the MBR of the current Polygon 
                 auto [ixmin, ixmax, iymin, iymax] = getMBR(OGRPoly);
@@ -194,58 +232,74 @@ int main(int argc, char* argv[]) {
                 vector<float> subset(count[0] * count[1]);
 
                 // Read subsection only
+                auto start_netcdf_query = clock::now();
                 raster.getVar(start, count, subset.data());
-                double currentMax = numeric_limits<double>::lowest();
+                total_netcdf_queries_time += (clock::now() - start_netcdf_query);
+
+                netcdfIOCount++;
+
+                // Define default MAX value
+                optional<double> currentMax = nullopt;
+                // double currentMax = numeric_limits<double>::lowest();
 
                 // Cell-by-cell Comparisons
                 for (size_t i = 0; i < count[0]; i++) {
                     for (size_t j = 0; j < count[1]; j++) {
-                        OGRPolygon cellPolygon = fromCellToPolygon(i + iymin, j + ixmin);
 
+                        // Needed conversions
+                        start_extra_operation = clock::now();
+                        OGRPolygon cellPolygon = fromCellToPolygon(i + iymin, j + ixmin);
                         BoostPolygon boostedCellPolygon = convertOGRPolygonToBoost(&cellPolygon);
+                        total_extra_opreations_time += (clock::now() - start_extra_operation);
 
                         if (bg::covered_by(boostedCellPolygon, poly)) {
                             double currentValue = subset[i * count[1] + j];
-                            if (currentValue > currentMax) {
+                            if (!currentMax.has_value() || currentValue > currentMax.value()) {
                                 currentMax = currentValue;
                             }
                         }
                     }
                 }
 
+                start_extra_operation = clock::now();
                 // Save pair <PolygonID, Max> only if a maximum value was found
-                if (currentMax > numeric_limits<double>::lowest()) {
-                    results[feature->GetFID()] = currentMax;
+                if (currentMax.has_value()) {
+                    results[feature->GetFID()] = currentMax.value();
                 } else {
                     // Exclude the current Polygon
                     numberOfExcludedPolygons++;
                     excludedPolygonsIDs.push_back(feature->GetFID());
                 }
+                total_extra_opreations_time += (clock::now() - start_extra_operation);
             }
             // Destroy feature
             OGRFeature::DestroyFeature(feature);
         }
         GDALClose(poDS);
 
-        // End time
-        auto end_time = clock::now();
-
         // Calculate execution time
-        auto execution_time = duration_cast<milliseconds>(end_time - start_time);
+        total_execution_time = clock::now() - start_total_time;
 
         // ================================     PRINT RESULTS    ================================
         
-        prinResultsTable(results);
-        cout << "Total execution time (including data loading): " << execution_time.count() << " ms "<< endl;
+        printResultsTable(results);
         cout << "Number of polygons excluded: " << numberOfExcludedPolygons << endl;
         cout << "Polygons excluded: ";
-
         for (const long& polygonID : excludedPolygonsIDs) {
             cout << polygonID << " ";
         }
 
         cout << endl;
-        
+        cout << endl << "RESULTS OF TIME MEASURING" << endl << endl;
+        cout << "Total execution time: " << total_execution_time.count() << " s "<< endl;
+        cout << "Total NetCDF I/O operations: " << netcdfIOCount << endl;
+        cout << "Total NetCDF I/O time: " << total_netcdf_queries_time.count() << " s " << endl;
+        cout << "Total GDAL I/O operations: " << gdalIOCount << endl;
+        cout << "Total GDAL I/O time: " << total_gdal_queries_time.count() << " s " << endl;
+        cout << "Total extra operations time*: " << total_extra_opreations_time.count() << " s " << endl;
+        cout << "------------------------------------------------------------------------" << endl;
+        cout << "*Extra operations refers to other types of operations that are not related to NAIVE algorithm as such, for example: converting object types or collecting results." << endl;
+
         return 0;
 
     } catch (NcException& e) {
