@@ -192,6 +192,9 @@ int main(int argc, char* argv[]) {
         int gdalIOCount = 0;
         
         auto start_total_time = clock::now();
+
+        // Sum
+        double sum;
         while (true) {
 
             auto start_gdal_query_time = clock::now();
@@ -238,9 +241,9 @@ int main(int argc, char* argv[]) {
 
                 netcdfIOCount++;
 
-                // Define default MAX value
-                optional<double> currentMax = nullopt;
-                // double currentMax = numeric_limits<double>::lowest();
+                sum = 0;
+
+                bool hasAtLeastOneCell = false;
 
                 // Cell-by-cell Comparisons
                 for (size_t i = 0; i < count[0]; i++) {
@@ -253,18 +256,16 @@ int main(int argc, char* argv[]) {
                         total_extra_opreations_time += (clock::now() - start_extra_operation);
 
                         if (bg::covered_by(boostedCellPolygon, poly)) {
-                            double currentValue = subset[i * count[1] + j];
-                            if (!currentMax.has_value() || currentValue > currentMax.value()) {
-                                currentMax = currentValue;
-                            }
+                            hasAtLeastOneCell = true;
+                            sum += subset[i * count[1] + j];
                         }
                     }
                 }
 
-                start_extra_operation = clock::now();
+               start_extra_operation = clock::now();
                 // Save pair <PolygonID, Max> only if a maximum value was found
-                if (currentMax.has_value()) {
-                    results[feature->GetFID()] = currentMax.value();
+                if (hasAtLeastOneCell) {
+                    results[feature->GetFID()] = sum;
                 } else {
                     // Exclude the current Polygon
                     numberOfExcludedPolygons++;
